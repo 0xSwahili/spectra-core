@@ -137,7 +137,7 @@ contract ContractPrincipalToken1 is Test {
     address MOCK_ADDR_5 = 0x0000000000000000000000000000000000000005;
     uint256 public MAX_FEE = 1e18;
     uint256 public TOKENIZATION_FEE = 1e15;
-    uint256 public YIELD_FEE = 0;
+    uint256 public YIELD_FEE = 5e15;
     uint256 public PT_FLASH_LOAN_FEE = 0;
     uint256 public DURATION = 100000;
     uint256 public IBT_UNIT;
@@ -715,6 +715,30 @@ contract ContractPrincipalToken1 is Test {
         actual = principalToken.depositIBT(1000000e18, MOCK_ADDR_1);
     }
 
+    function testCanLoseYieldAfterExpiry() public {
+        //Stage 1
+        uint256 amount = 1e18;
+        underlying.approve(address(principalToken), amount);
+        principalToken.deposit(amount, address(this));
+        _increaseTimeToExpiry();//PrincipalToken is now expired and no fee shoould apply
+        assertEq(principalToken.getCurrentYieldOfUserInIBT(address(this)),0);
+        _increaseRate(100);
+        uint256 currentYield = principalToken.getCurrentYieldOfUserInIBT(address(this));
+        assertGt(currentYield,0);
+        assertEq(principalToken.maxWithdraw(address(this)),amount);
+        uint256 balanceBeforeClaimYield = underlying.balanceOf(address(this));        
+        assertEq(principalToken.getUnclaimedFeesInIBT(),0);
+        principalToken.claimYield(address(this), 0);
+
+        //Stage 2
+        assertGt(principalToken.getUnclaimedFeesInIBT(),0);//yield fee already taken
+        assertGt(underlying.balanceOf(address(this)),balanceBeforeClaimYield);
+        uint256 maxWithdraw = principalToken.maxWithdraw(address(this));
+        assertEq(amount, maxWithdraw);
+        _increaseRate(100);
+        assertGt(principalToken.maxWithdraw(address(this)),maxWithdraw);
+        assertEq(principalToken.getCurrentYieldOfUserInIBT(address(this)),0);
+    }
     function testDepositIBTAtInitialRate() public {
         uint256 amountOfIbtToDeposit = 1e18;
         _prepareForDepositIBT(testUser, amountOfIbtToDeposit);
